@@ -16,19 +16,61 @@ namespace deskflow::server::placement {
 
 namespace {
 
-std::vector<Rect>::const_iterator findMonitor(const std::vector<Rect> &monitors, int32_t x, int32_t y)
-{
-  return std::find_if(monitors.begin(), monitors.end(), [x, y](const Rect &m) { return m.contains(x, y); });
-}
-
-bool isOnMonitor(const std::vector<Rect> &monitors, int32_t x, int32_t y)
-{
-  return findMonitor(monitors, x, y) != monitors.end();
-}
-
 bool isHorizontal(Direction travel)
 {
   return travel == Direction::Left || travel == Direction::Right;
+}
+
+// distance between the edge of `from` crossed when moving in `travel` and
+// `r`, if `r` lies beyond that edge and spans `along` (the cursor coordinate
+// along the edge).  gaps are crossed, like windows does between monitors.
+std::optional<int64_t> distanceBeyond(const Rect &from, Direction travel, int32_t along, const Rect &r)
+{
+  const bool spansY = along >= r.y && along < r.y + r.h;
+  const bool spansX = along >= r.x && along < r.x + r.w;
+  switch (travel) {
+  case Direction::Left:
+    if (spansY && r.x + r.w <= from.x) {
+      return int64_t{from.x} - (r.x + r.w);
+    }
+    break;
+  case Direction::Right:
+    if (spansY && r.x >= from.x + from.w) {
+      return int64_t{r.x} - (from.x + from.w);
+    }
+    break;
+  case Direction::Top:
+    if (spansX && r.y + r.h <= from.y) {
+      return int64_t{from.y} - (r.y + r.h);
+    }
+    break;
+  case Direction::Bottom:
+    if (spansX && r.y >= from.y + from.h) {
+      return int64_t{r.y} - (from.y + from.h);
+    }
+    break;
+  default:
+    break;
+  }
+  return std::nullopt;
+}
+
+// nearest monitor beyond the edge of `from`, other than `from` itself
+const Rect *nearestMonitorBeyond(
+    const std::vector<Rect> &monitors, const Rect &from, Direction travel, int32_t along, int64_t &distance
+)
+{
+  const Rect *nearest = nullptr;
+  for (const auto &m : monitors) {
+    if (&m == &from) {
+      continue;
+    }
+    if (const auto d = distanceBeyond(from, travel, along, m); d.has_value() && (!nearest || *d < distance)) {
+      nearest = &m;
+      distance = *d;
+    }
+  }
+  return nearest;
 }
 
 float clampFraction(float fraction)
@@ -98,29 +140,43 @@ std::optional<ServerExit> findServerExit(
   {
     Direction travel;
     bool inZone;
-    int32_t px;
-    int32_t py;
   };
   const std::array<Side, 4> sides{{
-      {Direction::Left, x < m.x + zoneSize, m.x - 1, y},
-      {Direction::Right, x >= m.x + m.w - zoneSize, m.x + m.w, y},
-      {Direction::Top, y < m.y + zoneSize, x, m.y - 1},
-      {Direction::Bottom, y >= m.y + m.h - zoneSize, x, m.y + m.h},
+      {Direction::Left, x < m.x + zoneSize},
+      {Direction::Right, x >= m.x + m.w - zoneSize},
+      {Direction::Top, y < m.y + zoneSize},
+      {Direction::Bottom, y >= m.y + m.h - zoneSize},
   }};
 
   for (const auto &side : sides) {
-    if (!side.inZone || isOnMonitor(monitors, side.px, side.py)) {
+    if (!side.inZone) {
       continue;
     }
+    const int32_t along = isHorizontal(side.travel) ? y : x;
+
+    // the first thing met in that direction wins; another monitor is left to windows
+    const Placement *nearest = nullptr;
+    int64_t nearestDistance = 0;
     for (const auto &placement : placements) {
-      const Rect &a = placement.area;
-      if (!a.contains(side.px, side.py)) {
-        continue;
+      if (const auto d = distanceBeyond(m, side.travel, along, placement.area);
+          d.has_value() && (!nearest || *d < nearestDistance)) {
+        nearest = &placement;
+        nearestDistance = *d;
       }
-      const float fraction = isHorizontal(side.travel) ? static_cast<float>(y - a.y) / static_cast<float>(a.h)
-                                                       : static_cast<float>(x - a.x) / static_cast<float>(a.w);
-      return ServerExit{placement.client, side.travel, clampFraction(fraction)};
     }
+    if (nearest == nullptr) {
+      continue;
+    }
+    int64_t monitorDistance = 0;
+    if (nearestMonitorBeyond(monitors, m, side.travel, along, monitorDistance) != nullptr &&
+        monitorDistance <= nearestDistance) {
+      continue;
+    }
+
+    const Rect &a = nearest->area;
+    const float fraction = isHorizontal(side.travel) ? static_cast<float>(y - a.y) / static_cast<float>(a.h)
+                                                     : static_cast<float>(x - a.x) / static_cast<float>(a.w);
+    return ServerExit{nearest->client, side.travel, clampFraction(fraction)};
   }
   return std::nullopt;
 }
@@ -153,43 +209,31 @@ std::optional<Point> findServerEntry(
     const std::vector<Rect> &monitors, const Rect &area, Direction travel, float fraction, int32_t zoneSize
 )
 {
-  Point p;
-  switch (travel) {
-  case Direction::Left:
-    p = {area.x - 1, area.y + offsetAlong(fraction, area.h)};
-    break;
-  case Direction::Right:
-    p = {area.x + area.w, area.y + offsetAlong(fraction, area.h)};
-    break;
-  case Direction::Top:
-    p = {area.x + offsetAlong(fraction, area.w), area.y - 1};
-    break;
-  case Direction::Bottom:
-    p = {area.x + offsetAlong(fraction, area.w), area.y + area.h};
-    break;
-  default:
-    return std::nullopt;
-  }
+  const int32_t along = isHorizontal(travel) ? area.y + offsetAlong(fraction, area.h)
+                                             : area.x + offsetAlong(fraction, area.w);
 
-  const auto monitor = findMonitor(monitors, p.x, p.y);
-  if (monitor == monitors.end()) {
+  // the first monitor met in that direction, across any gap
+  int64_t distance = 0;
+  const Rect *monitor = nearestMonitorBeyond(monitors, area, travel, along, distance);
+  if (monitor == nullptr) {
     return std::nullopt;
   }
   const Rect &m = *monitor;
 
-  // move inside the monitor so the cursor doesn't land in the jump zone
+  // enter on the facing edge, moved inside so the cursor doesn't land in the jump zone
+  Point p;
   switch (travel) {
   case Direction::Left:
-    p.x -= zoneSize;
+    p = {m.x + m.w - 1 - zoneSize, along};
     break;
   case Direction::Right:
-    p.x += zoneSize;
+    p = {m.x + zoneSize, along};
     break;
   case Direction::Top:
-    p.y -= zoneSize;
+    p = {along, m.y + m.h - 1 - zoneSize};
     break;
   default:
-    p.y += zoneSize;
+    p = {along, m.y + zoneSize};
     break;
   }
   p.x = std::clamp(p.x, m.x, m.x + m.w - 1);

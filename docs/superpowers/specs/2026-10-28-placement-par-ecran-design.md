@@ -144,6 +144,18 @@ placé :
 - sinon (exemple : bord gauche ou bas du laptop), on retombe sur la logique actuelle.
   Avec la config cible, il ne se passe alors rien.
 
+**Vides entre écrans** (ajout après le premier test réel). Le rectangle placé n'a pas
+besoin de toucher les écrans du serveur. Dans chaque direction, on prend le premier
+écran ou placement rencontré, même s'il y a un vide entre les deux, comme le fait
+Windows. Ça permet de placer le laptop à sa vraie position, plus large que le débord
+du G9 et séparé du 21:9 par un petit vide.
+
+**Mouvements « en retard ».** Quand on quitte le serveur par un bord intérieur, un
+événement souris calculé avant le recentrage du curseur est ignoré : c'est celui qui
+arrive plus près du point de sortie que du centre. Sans ça, Deskflow le prenait pour un
+saut géant, ce qui provoquait un ping-pong G9 ↔ laptop (le garde-fou d'origine ne couvre
+que les bords du rectangle global, cf. issue amont #10030).
+
 **Priorité.** Le placement est évalué avant `links`. Les liens classiques continuent de
 marcher pour tout ce que le placement ne couvre pas.
 

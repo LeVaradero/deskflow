@@ -29,4 +29,9 @@ private Q_SLOTS:
   void edgeFractionHalf();
   void parseValid();
   void parseRejects();
+  void exitLeftAcrossGap();
+  void exitDownOnlyAbovePlacement();
+  void serverEntryAcrossGap();
+  void staleMotionAfterWarp();
+  void leavePointOnDesktopEdge();
 };

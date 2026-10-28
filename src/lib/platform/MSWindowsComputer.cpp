@@ -13,6 +13,7 @@
 #include "arch/win32/XArchWindows.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "base/MotionFilter.h"
 #include "base/TMethodJob.h"
 #include "client/Client.h"
 #include "common/Constants.h"
@@ -290,6 +291,12 @@ void MSWindowsComputer::leave()
   m_desks->leave(m_keyLayout);
 
   if (m_isPrimary) {
+    // leaving through a monitor edge inside the desktop (a placed client)
+    // isn't covered by the bogus motion check, which assumes the cursor
+    // left through an edge of the whole desktop.
+    m_leavePoint = {m_xCursor, m_yCursor};
+    m_leftThroughInnerEdge = !deskflow::isOnEdge(m_leavePoint, {m_x, m_y, m_w, m_h}, getJumpZoneSize());
+
     LOG_VERBOSE("centering cursor on leave: %+d, %+d", m_xCenter, m_yCenter);
     warpCursor(m_xCenter, m_yCenter);
 
@@ -1265,8 +1272,10 @@ bool MSWindowsComputer::onMouseMove(int32_t mx, int32_t my)
     // ignore (see warpCursorNoFlush() for a further
     // description).
     static int32_t bogusZoneSize = 10;
-    if (-x + bogusZoneSize > m_xCenter - m_x || x + bogusZoneSize > m_x + m_w - m_xCenter ||
-        -y + bogusZoneSize > m_yCenter - m_y || y + bogusZoneSize > m_y + m_h - m_yCenter) {
+    if (m_leftThroughInnerEdge && deskflow::isStaleAfterWarp({mx, my}, m_leavePoint, {m_xCenter, m_yCenter})) {
+      LOG_DEBUG("dropped stale motion after leaving through an inner edge: %+d,%+d", x, y);
+    } else if (-x + bogusZoneSize > m_xCenter - m_x || x + bogusZoneSize > m_x + m_w - m_xCenter ||
+               -y + bogusZoneSize > m_yCenter - m_y || y + bogusZoneSize > m_y + m_h - m_yCenter) {
 
       LOG_DEBUG("dropped bogus delta motion: %+d,%+d", x, y);
     } else {

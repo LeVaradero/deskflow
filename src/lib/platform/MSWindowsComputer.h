@@ -272,6 +272,10 @@ private:
   int32_t m_yCenter = 0;
   std::vector<deskflow::Rect> m_monitorRects;
 
+  // where the cursor left the primary computer, see leave()
+  deskflow::Point m_leavePoint;
+  bool m_leftThroughInnerEdge = false;
+
   // true if system appears to have multiple monitors
   bool m_multimon = false;
 

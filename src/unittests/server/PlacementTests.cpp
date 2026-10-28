@@ -6,6 +6,7 @@
 
 #include "PlacementTests.h"
 
+#include "base/MotionFilter.h"
 #include "server/Placement.h"
 
 #include <cmath>
@@ -155,6 +156,63 @@ void PlacementTests::parseRejects()
   QVERIFY_THROWS_EXCEPTION(std::invalid_argument, parsePlacement("A B(0,0,1,1)"));
   QVERIFY_THROWS_EXCEPTION(std::invalid_argument, parsePlacement("A = B(x,0,1,1)"));
   QVERIFY_THROWS_EXCEPTION(std::invalid_argument, parsePlacement("= B(0,0,1,1)"));
+}
+
+namespace {
+// laptop wider than the G9 overhang, sticking out on the left, with a gap before the 21:9
+const Placement kGapLaptop{"LAPTOPDUFLEX", "Corsair", {-1900, 0, 1500, 1080}};
+} // namespace
+
+void PlacementTests::exitLeftAcrossGap()
+{
+  const auto hit = findServerExit(kMonitors, {kGapLaptop}, 0, 540, 1);
+  QVERIFY(hit.has_value());
+  QVERIFY(hit->travel == Direction::Left);
+  QVERIFY(approx(hit->fraction, 0.5f));
+}
+
+void PlacementTests::exitDownOnlyAbovePlacement()
+{
+  const auto hit = findServerExit(kMonitors, {kGapLaptop}, -1000, -1, 1);
+  QVERIFY(hit.has_value());
+  QVERIFY(hit->travel == Direction::Bottom);
+  QVERIFY(approx(hit->fraction, 0.6f));
+
+  // nothing below the gap between the laptop and the 21:9
+  QVERIFY(!findServerExit(kMonitors, {kGapLaptop}, -200, -1, 1).has_value());
+}
+
+void PlacementTests::serverEntryAcrossGap()
+{
+  const auto right = findServerEntry(kMonitors, kGapLaptop.area, Direction::Right, 0.5f, 1);
+  QVERIFY(right.has_value());
+  QCOMPARE(*right, (Point{1, 540}));
+
+  const auto up = findServerEntry(kMonitors, kGapLaptop.area, Direction::Top, 0.6f, 1);
+  QVERIFY(up.has_value());
+  QCOMPARE(*up, (Point{-1000, -2}));
+
+  // the part of the laptop sticking out on the left has nothing above it
+  QVERIFY(!findServerEntry(kMonitors, kGapLaptop.area, Direction::Top, 0.1f, 1).has_value());
+}
+
+void PlacementTests::staleMotionAfterWarp()
+{
+  // from a real log: left at -846,6, warped to 1280,540, then events at 59,76 and 59,100
+  QVERIFY(deskflow::isStaleAfterWarp({59, 76}, {-846, 6}, {1280, 540}));
+  QVERIFY(deskflow::isStaleAfterWarp({59, 100}, {-846, 6}, {1280, 540}));
+  QVERIFY(!deskflow::isStaleAfterWarp({1206, 570}, {-846, 6}, {1280, 540}));
+  QVERIFY(deskflow::isStaleAfterWarp({-3, 540}, {0, 540}, {1280, 540}));
+  QVERIFY(!deskflow::isStaleAfterWarp({1200, 540}, {0, 540}, {1280, 540}));
+}
+
+void PlacementTests::leavePointOnDesktopEdge()
+{
+  const Rect desktop{-1292, -1440, 5120, 2520};
+  QVERIFY(deskflow::isOnEdge({-1292, -700}, desktop, 1));
+  QVERIFY(deskflow::isOnEdge({3827, 0}, desktop, 1));
+  QVERIFY(!deskflow::isOnEdge({-846, 6}, desktop, 1));
+  QVERIFY(!deskflow::isOnEdge({0, 540}, desktop, 1));
 }
 
 QTEST_MAIN(PlacementTests)
