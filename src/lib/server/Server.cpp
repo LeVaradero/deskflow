@@ -233,6 +233,22 @@ bool Server::setConfig(const ServerConfig &config)
   // tell primary computer about reconfiguration
   m_primaryClient->reconfigure(getActivePrimarySides());
 
+  // report placements that can't work as written
+  const auto serverName = getName(m_primaryClient);
+  const auto monitors = m_primaryClient->getMonitorRects();
+  for (const auto &p : config.getPlacements()) {
+    if (!deskflow::string::CaselessCmp::equal(p.reference, serverName)) {
+      LOG_WARN("placement for \"%s\" ignored: \"%s\" is not this server", p.client.c_str(), p.reference.c_str());
+      continue;
+    }
+    const auto overlaps = [&p](const deskflow::Rect &m) {
+      return p.area.x < m.x + m.w && m.x < p.area.x + p.area.w && p.area.y < m.y + m.h && m.y < p.area.y + p.area.h;
+    };
+    if (std::any_of(monitors.begin(), monitors.end(), overlaps)) {
+      LOG_WARN("placement for \"%s\" overlaps a monitor", p.client.c_str());
+    }
+  }
+
   // tell all (connected) clients about current options
   for (ClientList::const_iterator index = m_clients.begin(); index != m_clients.end(); ++index) {
     BaseClientProxy *client = index->second;
@@ -384,6 +400,63 @@ bool Server::isLockedToComputer() const
 
   // not locked
   return false;
+}
+
+std::vector<placement::Placement> Server::getServerPlacements() const
+{
+  std::vector<placement::Placement> result;
+  const auto serverName = getName(m_primaryClient);
+  for (const auto &p : m_config->getPlacements()) {
+    if (deskflow::string::CaselessCmp::equal(p.reference, serverName)) {
+      result.push_back(p);
+    }
+  }
+  return result;
+}
+
+std::optional<placement::Placement> Server::findPlacementFor(const std::string &client) const
+{
+  for (const auto &p : getServerPlacements()) {
+    if (deskflow::string::CaselessCmp::equal(p.client, client)) {
+      return p;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<bool> Server::switchToPlacedClient(int32_t x, int32_t y, int32_t xActive, int32_t yActive)
+{
+  const auto placements = getServerPlacements();
+  if (placements.empty()) {
+    return std::nullopt;
+  }
+
+  const auto hit = placement::findServerExit(
+      m_primaryClient->getMonitorRects(), placements, x, y, getJumpZoneSize(m_primaryClient)
+  );
+  if (!hit.has_value()) {
+    return std::nullopt;
+  }
+
+  // the placed client must be connected
+  const auto index = m_clients.find(hit->client);
+  if (index == m_clients.end() || index->second == m_primaryClient) {
+    return std::nullopt;
+  }
+  BaseClientProxy *dst = index->second;
+
+  int32_t dx;
+  int32_t dy;
+  int32_t dw;
+  int32_t dh;
+  dst->getShape(dx, dy, dw, dh);
+  const auto entry = placement::clientEntryPoint(deskflow::Rect{dx, dy, dw, dh}, hit->travel, hit->fraction);
+
+  if (!isSwitchOkay(dst, hit->travel, entry.x, entry.y, xActive, yActive)) {
+    return false;
+  }
+  switchComputer(dst, entry.x, entry.y, false);
+  return true;
 }
 
 int32_t Server::getJumpZoneSize(const BaseClientProxy *client) const
@@ -1652,6 +1725,11 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
     yc = ay + ah - 1;
   }
 
+  // placed clients are reached through the edges of individual monitors
+  if (const auto switched = switchToPlacedClient(x, y, xc, yc); switched.has_value()) {
+    return *switched;
+  }
+
   // see if we should change computers
   // when the cursor is in a corner, there may be a computer either
   // horizontally or vertically.  check both directions.
@@ -1832,6 +1910,25 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
 
       // skip rest of block
       break;
+    }
+
+    // a placed client goes back to the server monitor beyond its edge
+    if (const auto placed = findPlacementFor(getName(m_active)); placed.has_value()) {
+      const float fraction = placement::edgeFraction(deskflow::Rect{ax, ay, aw, ah}, dir, xc, yc);
+      const auto entry = placement::findServerEntry(
+          m_primaryClient->getMonitorRects(), placed->area, dir, fraction, getJumpZoneSize(m_primaryClient)
+      );
+      if (entry.has_value()) {
+        if (isSwitchOkay(m_primaryClient, dir, entry->x, entry->y, xc, yc)) {
+          newComputer = m_primaryClient;
+          m_x = entry->x;
+          m_y = entry->y;
+        } else {
+          newComputer = m_active;
+          jump = false;
+        }
+        break;
+      }
     }
 
     // try to switch computer.  get the neighbor.

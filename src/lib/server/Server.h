@@ -19,6 +19,7 @@
 
 #include <climits>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -258,6 +259,17 @@ private:
   // options like switch delay and tracking any state required to
   // implement them.  returns true iff a switch is permitted.
   bool isSwitchOkay(BaseClientProxy *dst, Direction, int32_t x, int32_t y, int32_t xActive, int32_t yActive);
+
+  // placements whose reference is this server
+  std::vector<deskflow::server::placement::Placement> getServerPlacements() const;
+
+  // placement of \p client relative to this server, or nothing
+  std::optional<deskflow::server::placement::Placement> findPlacementFor(const std::string &client) const;
+
+  // handle a primary mouse move at \p x, \p y that may leave a monitor
+  // towards a placed client.  returns nothing if no placed client lies
+  // beyond the cursor, otherwise whether the computer was switched.
+  std::optional<bool> switchToPlacedClient(int32_t x, int32_t y, int32_t xActive, int32_t yActive);
 
   // update switch state due to a mouse move at \p x, \p y that
   // doesn't switch computers.
