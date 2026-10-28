@@ -25,8 +25,8 @@
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
 
-#ifdef _WIN32
 #include <algorithm>
+#ifdef _WIN32
 #include <array>
 #endif
 #include <cmath>
@@ -236,16 +236,25 @@ bool Server::setConfig(const ServerConfig &config)
   // report placements that can't work as written
   const auto serverName = getName(m_primaryClient);
   const auto monitors = m_primaryClient->getMonitorRects();
-  for (const auto &p : config.getPlacements()) {
+  const auto &placements = config.getPlacements();
+  const auto intersects = [](const deskflow::Rect &a, const deskflow::Rect &b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  };
+  for (size_t i = 0; i < placements.size(); ++i) {
+    const auto &p = placements[i];
     if (!deskflow::string::CaselessCmp::equal(p.reference, serverName)) {
       LOG_WARN("placement for \"%s\" ignored: \"%s\" is not this server", p.client.c_str(), p.reference.c_str());
       continue;
     }
-    const auto overlaps = [&p](const deskflow::Rect &m) {
-      return p.area.x < m.x + m.w && m.x < p.area.x + p.area.w && p.area.y < m.y + m.h && m.y < p.area.y + p.area.h;
-    };
-    if (std::any_of(monitors.begin(), monitors.end(), overlaps)) {
+    const auto overlapsArea = [&p, &intersects](const deskflow::Rect &m) { return intersects(p.area, m); };
+    if (std::any_of(monitors.begin(), monitors.end(), overlapsArea)) {
       LOG_WARN("placement for \"%s\" overlaps a monitor", p.client.c_str());
+    }
+    for (size_t j = i + 1; j < placements.size(); ++j) {
+      if (deskflow::string::CaselessCmp::equal(placements[j].reference, p.reference) &&
+          intersects(p.area, placements[j].area)) {
+        LOG_WARN("placement for \"%s\" overlaps placement for \"%s\"", p.client.c_str(), placements[j].client.c_str());
+      }
     }
   }
 

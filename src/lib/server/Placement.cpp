@@ -76,11 +76,23 @@ std::optional<ServerExit> findServerExit(
     int32_t zoneSize
 )
 {
-  const auto monitor = findMonitor(monitors, x, y);
-  if (placements.empty() || monitor == monitors.end()) {
+  if (placements.empty() || monitors.empty()) {
     return std::nullopt;
   }
-  const Rect &m = *monitor;
+
+  // low level hooks report the position before windows clips it to a
+  // monitor, so pushing against a monitor edge gives a point just outside
+  // it.  use the nearest monitor and clip the point like windows does.
+  const auto overshoot = [x, y](const Rect &r) {
+    const int64_t dx = std::max({int64_t{r.x} - x, int64_t{0}, int64_t{x} - (r.x + r.w - 1)});
+    const int64_t dy = std::max({int64_t{r.y} - y, int64_t{0}, int64_t{y} - (r.y + r.h - 1)});
+    return dx + dy;
+  };
+  const Rect &m = *std::min_element(monitors.begin(), monitors.end(), [&overshoot](const Rect &a, const Rect &b) {
+    return overshoot(a) < overshoot(b);
+  });
+  x = std::clamp(x, m.x, m.x + m.w - 1);
+  y = std::clamp(y, m.y, m.y + m.h - 1);
 
   struct Side
   {

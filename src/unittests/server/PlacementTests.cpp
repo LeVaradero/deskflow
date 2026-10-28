@@ -8,6 +8,7 @@
 
 #include "server/Placement.h"
 
+#include <cmath>
 #include <stdexcept>
 
 using namespace deskflow::server::placement;
@@ -57,6 +58,20 @@ void PlacementTests::noExitIntoEmptyRightGap()
 void PlacementTests::noExitFromG9LeftEdge()
 {
   QVERIFY(!findServerExit(kMonitors, kPlacements, -1292, -700, 1).has_value());
+}
+
+void PlacementTests::exitFromUnclippedHookPosition()
+{
+  // low level hooks report the position before windows clips the cursor
+  auto hit = findServerExit(kMonitors, kPlacements, -7, 540, 1);
+  QVERIFY(hit.has_value());
+  QVERIFY(hit->travel == Direction::Left);
+  QVERIFY(approx(hit->fraction, 0.5f));
+
+  hit = findServerExit(kMonitors, kPlacements, -646, 4, 1);
+  QVERIFY(hit.has_value());
+  QVERIFY(hit->travel == Direction::Bottom);
+  QVERIFY(approx(hit->fraction, 0.5f));
 }
 
 void PlacementTests::cornerPicksSideThatHitsPlacement()

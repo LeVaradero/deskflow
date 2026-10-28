@@ -15,6 +15,7 @@ private Q_SLOTS:
   void noExitWhereAnotherMonitorIsAdjacent();
   void noExitIntoEmptyRightGap();
   void noExitFromG9LeftEdge();
+  void exitFromUnclippedHookPosition();
   void cornerPicksSideThatHitsPlacement();
   void noExitAwayFromEdges();
   void noPlacementsMeansNoExit();
