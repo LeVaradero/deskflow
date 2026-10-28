@@ -14,6 +14,7 @@
 #include "deskflow/OptionTypes.h"
 #include "net/NetworkAddress.h"
 #include "server/InputFilter.h"
+#include "server/Placement.h"
 
 #include <iosfwd>
 #include <map>
@@ -235,6 +236,13 @@ public:
       float dstStart, float dstEnd
   );
 
+  //! Place a client inside another computer's desktop coordinates
+  /*!
+  Returns false if the client or the reference computer is unknown, or if
+  the client is already placed.  Names are stored in canonical form.
+  */
+  bool addPlacement(const placement::Placement &placement);
+
   //! Disconnect computers
   /*!
   Removes all connections created by connect() on side \c srcSide.
@@ -343,6 +351,9 @@ public:
   //! Get the server address
   const NetworkAddress &getDeskflowAddress() const;
 
+  //! Get the clients placed with addPlacement()
+  const std::vector<placement::Placement> &getPlacements() const;
+
   //! Get the computer options
   /*!
   Returns all the added options for the named computer.  Returns nullptr
@@ -399,6 +410,7 @@ private:
   void readSectionScreens(ConfigReadContext &);
   void readSectionLinks(ConfigReadContext &);
   void readSectionAliases(ConfigReadContext &);
+  void readSectionPlacements(ConfigReadContext &);
 
   InputFilter::Condition *
   parseCondition(const ConfigReadContext &, const std::string &condition, const std::vector<std::string> &args);
@@ -416,6 +428,7 @@ private:
   ScreenOptions m_globalOptions;
   InputFilter m_inputFilter;
   bool m_hasLockToComputerAction = false;
+  std::vector<placement::Placement> m_placements;
   IEventQueue *m_events;
 };
 

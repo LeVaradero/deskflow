@@ -16,10 +16,12 @@
 #include "net/SocketException.h"
 #include "server/Server.h"
 
+#include <algorithm>
 #include <assert.h>
 #include <cstdlib>
 #include <istream>
 #include <ostream>
+#include <stdexcept>
 
 using namespace deskflow::string;
 
@@ -370,6 +372,32 @@ const NetworkAddress &Config::getDeskflowAddress() const
   return m_deskflowAddress;
 }
 
+bool Config::addPlacement(const placement::Placement &placement)
+{
+  if (!isComputer(placement.client) || !isComputer(placement.reference)) {
+    return false;
+  }
+
+  placement::Placement canonical = placement;
+  canonical.client = getCanonicalName(placement.client);
+  canonical.reference = getCanonicalName(placement.reference);
+
+  const auto isSameClient = [&canonical](const placement::Placement &p) {
+    return CaselessCmp::equal(p.client, canonical.client);
+  };
+  if (std::any_of(m_placements.begin(), m_placements.end(), isSameClient)) {
+    return false;
+  }
+
+  m_placements.push_back(canonical);
+  return true;
+}
+
+const std::vector<placement::Placement> &Config::getPlacements() const
+{
+  return m_placements;
+}
+
 const Config::ScreenOptions *Config::getOptions(const std::string &name) const
 {
   // find options
@@ -439,6 +467,10 @@ bool Config::operator==(const Config &x) const
     return false;
   }
 
+  if (m_placements != x.m_placements) {
+    return false;
+  }
+
   return true;
 }
 
@@ -495,6 +527,7 @@ void Config::readSection(ConfigReadContext &s)
   static const char s_screens[] = "screens";
   static const char s_links[] = "links";
   static const char s_aliases[] = "aliases";
+  static const char s_placements[] = "placements";
 
   std::string line;
   if (!s.readLine(line)) {
@@ -527,6 +560,8 @@ void Config::readSection(ConfigReadContext &s)
     readSectionAliases(s);
   } else if (name == s_links) {
     readSectionLinks(s);
+  } else if (name == s_placements) {
+    readSectionPlacements(s);
   } else {
     throw ServerConfigReadException(s, "unknown section name \"%{1}\"", name);
   }
@@ -711,6 +746,28 @@ void Config::readSectionLinks(ConfigReadContext &s)
     }
   }
   throw ServerConfigReadException(s, "unexpected end of links section");
+}
+
+void Config::readSectionPlacements(ConfigReadContext &s)
+{
+  // each line is `<client> = <reference>(<x>, <y>, <width>, <height>)'
+  std::string line;
+  while (s.readLine(line)) {
+    if (line == "end") {
+      return;
+    }
+
+    placement::Placement p;
+    try {
+      p = placement::parsePlacement(line);
+    } catch (const std::invalid_argument &e) {
+      throw ServerConfigReadException(s, e.what());
+    }
+    if (!addPlacement(p)) {
+      throw ServerConfigReadException(s, "unknown computer name or duplicate placement \"%{1}\"", line);
+    }
+  }
+  throw ServerConfigReadException(s, "unexpected end of placements section");
 }
 
 void Config::readSectionAliases(ConfigReadContext &s)
@@ -1267,6 +1324,16 @@ std::ostream &operator<<(std::ostream &s, const Config &config)
     }
   }
   s << "end" << std::endl;
+
+  // placements section
+  if (!config.m_placements.empty()) {
+    s << "section: placements" << std::endl;
+    for (const auto &p : config.m_placements) {
+      s << "\t" << p.client << " = " << p.reference << "(" << p.area.x << "," << p.area.y << "," << p.area.w << ","
+        << p.area.h << ")" << std::endl;
+    }
+    s << "end" << std::endl;
+  }
 
   // options section
   s << "section: options" << std::endl;

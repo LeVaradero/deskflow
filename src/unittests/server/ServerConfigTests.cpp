@@ -9,6 +9,8 @@
 
 #include "server/Config.h"
 
+#include <sstream>
+
 class OnlySystemFilter : public InputFilter::Condition
 {
 public:
@@ -159,6 +161,57 @@ void ServerConfigTests::equalityCheck_diff_neighbours3()
   QVERIFY(b.addComputer("computerC"));
   QVERIFY(b.connect("computerA", Direction::Bottom, 0.0f, 0.5f, "computerC", 0.5f, 1.0f));
   QVERIFY(a != b);
+}
+
+void ServerConfigTests::placementEquality()
+{
+  Config a(nullptr);
+  Config b(nullptr);
+  QVERIFY(a.addComputer("computerA"));
+  QVERIFY(a.addComputer("computerB"));
+  QVERIFY(b.addComputer("computerA"));
+  QVERIFY(b.addComputer("computerB"));
+  QVERIFY(a == b);
+
+  QVERIFY(a.addPlacement({"computerB", "computerA", {-10, 0, 10, 10}}));
+  QVERIFY(a != b);
+
+  QVERIFY(b.addPlacement({"computerB", "computerA", {-10, 0, 10, 10}}));
+  QVERIFY(a == b);
+}
+
+void ServerConfigTests::placementUnknownComputerRejected()
+{
+  Config a(nullptr);
+  QVERIFY(a.addComputer("computerA"));
+  QVERIFY(a.addComputer("computerB"));
+  QVERIFY(!a.addPlacement({"nope", "computerA", {0, 0, 1, 1}}));
+  QVERIFY(!a.addPlacement({"computerB", "nope", {0, 0, 1, 1}}));
+  QVERIFY(a.getPlacements().empty());
+}
+
+void ServerConfigTests::placementDuplicateRejected()
+{
+  Config a(nullptr);
+  QVERIFY(a.addComputer("computerA"));
+  QVERIFY(a.addComputer("computerB"));
+  QVERIFY(a.addPlacement({"computerB", "computerA", {0, 0, 1, 1}}));
+  QVERIFY(!a.addPlacement({"computerB", "computerA", {5, 5, 1, 1}}));
+  QCOMPARE(a.getPlacements().size(), size_t(1));
+}
+
+void ServerConfigTests::placementSerialized()
+{
+  Config a(nullptr);
+  QVERIFY(a.addComputer("computerA"));
+  QVERIFY(a.addComputer("computerB"));
+  QVERIFY(a.addPlacement({"computerB", "computerA", {-10, 0, 10, 10}}));
+
+  std::ostringstream os;
+  os << a;
+  const auto text = os.str();
+  QVERIFY(text.find("section: placements") != std::string::npos);
+  QVERIFY(text.find("computerB = computerA(-10,0,10,10)") != std::string::npos);
 }
 
 QTEST_MAIN(ServerConfigTests)
