@@ -54,6 +54,11 @@ int32_t PrimaryClient::getJumpZoneSize() const
   return m_computer->getJumpZoneSize();
 }
 
+std::vector<deskflow::Rect> PrimaryClient::getMonitorRects() const
+{
+  return m_computer->getMonitorRects();
+}
+
 void PrimaryClient::getCursorCenter(int32_t &x, int32_t &y) const
 {
   m_computer->getCursorCenter(x, y);

@@ -89,6 +89,7 @@ public:
   void fakeInputBegin() override;
   void fakeInputEnd() override;
   int32_t getJumpZoneSize() const override;
+  std::vector<deskflow::Rect> getMonitorRects() const override;
   bool isAnyMouseButtonDown(uint32_t &buttonID) const override;
   void getCursorCenter(int32_t &x, int32_t &y) const override;
 
@@ -269,6 +270,7 @@ private:
   int32_t m_h = 0;
   int32_t m_xCenter = 0;
   int32_t m_yCenter = 0;
+  std::vector<deskflow::Rect> m_monitorRects;
 
   // true if system appears to have multiple monitors
   bool m_multimon = false;

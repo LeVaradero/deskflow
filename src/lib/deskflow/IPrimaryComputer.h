@@ -11,6 +11,10 @@
 #include "deskflow/KeyTypes.h"
 #include "deskflow/MouseTypes.h"
 
+#include "base/Rect.h"
+
+#include <vector>
+
 //! Primary comptuer interface
 /*!
 This interface defines the methods common to all platform dependent
@@ -156,6 +160,16 @@ public:
   the comptuer that cause the cursor to jump to another comptuer.
   */
   virtual int32_t getJumpZoneSize() const = 0;
+
+  //! Get monitor rectangles
+  /*!
+  Return the rectangle of each monitor in desktop coordinates.  Platforms
+  that don't report monitors return an empty list.
+  */
+  virtual std::vector<deskflow::Rect> getMonitorRects() const
+  {
+    return {};
+  }
 
   //! Test if mouse is pressed
   /*!

@@ -667,6 +667,11 @@ int32_t MSWindowsComputer::getJumpZoneSize() const
   return 1;
 }
 
+std::vector<deskflow::Rect> MSWindowsComputer::getMonitorRects() const
+{
+  return m_monitorRects;
+}
+
 bool MSWindowsComputer::isAnyMouseButtonDown(uint32_t &buttonID) const
 {
   static const char *buttonToName[] = {"<invalid>",    "Left Button", "Middle Button",
@@ -1440,6 +1445,25 @@ void MSWindowsComputer::updateComputerShape()
 
   // check for multiple monitors
   m_multimon = (m_w != GetSystemMetrics(SM_CXSCREEN) || m_h != GetSystemMetrics(SM_CYSCREEN));
+
+  // get each monitor, so placed clients can be reached from monitor edges
+  m_monitorRects.clear();
+  EnumDisplayMonitors(
+      nullptr, nullptr,
+      [](HMONITOR, HDC, LPRECT rect, LPARAM data) -> BOOL {
+        auto *rects = reinterpret_cast<std::vector<deskflow::Rect> *>(data);
+        rects->push_back(
+            {static_cast<int32_t>(rect->left), static_cast<int32_t>(rect->top),
+             static_cast<int32_t>(rect->right - rect->left), static_cast<int32_t>(rect->bottom - rect->top)}
+        );
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&m_monitorRects)
+  );
+  for (size_t i = 0; i < m_monitorRects.size(); ++i) {
+    const auto &r = m_monitorRects[i];
+    LOG_DEBUG("monitor %d: %d,%d %dx%d", static_cast<int>(i), r.x, r.y, r.w, r.h);
+  }
 
   // tell the desks
   m_desks->setShape(m_x, m_y, m_w, m_h, m_xCenter, m_yCenter, m_multimon);
