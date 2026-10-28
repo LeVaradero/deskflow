@@ -34,6 +34,7 @@ add_library(base STATIC ${PLATFORM_CODE}
   Log.cpp
   Log.h
   PriorityQueue.h
+  Rect.h
   SimpleEventQueueBuffer.cpp
   SimpleEventQueueBuffer.h
   Stopwatch.cpp

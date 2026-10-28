@@ -28,3 +28,11 @@ create_test(
   SOURCE ClientProxyTests.cpp
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/server"
 )
+
+create_test(
+  NAME PlacementTests
+  DEPENDS server
+  LIBS base arch ${extra_libs}
+  SOURCE PlacementTests.cpp
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/lib/server"
+)
